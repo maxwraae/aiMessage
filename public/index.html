@@ -18,78 +18,129 @@
 <body>
   <div id="app">
 
-    <!-- HOME VIEW: Full-width session list (default) -->
+    <!-- HOME VIEW: Two-column dashboard (default) -->
     <div id="home-view">
-      <div class="home-header">
-        <h1>Messages</h1>
-        <button id="new-session-btn" class="icon-btn" title="New Session">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-            <path d="M3 4.5C3 3.67 3.67 3 4.5 3h11c.83 0 1.5.67 1.5 1.5v8c0 .83-.67 1.5-1.5 1.5H7l-3.3 2.47A.5.5 0 013 16.2V4.5z" stroke="currentColor" stroke-width="1.5" fill="none"/>
-            <line x1="10" y1="6.5" x2="10" y2="11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            <line x1="7.5" y1="9" x2="12.5" y2="9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-        </button>
+      <div class="dashboard-inner">
+        <!-- Dashboard header: greeting only -->
+        <div class="dashboard-header">
+          <h1 class="dashboard-greeting" id="dashboard-greeting">Hi Max</h1>
+        </div>
+
+        <!-- Two-column dashboard body -->
+        <div class="dashboard-columns">
+          <!-- Left: Projects -->
+          <div class="dashboard-col col-projects">
+            <div class="dashboard-section-header">
+              <span class="dashboard-section-label">Projects</span>
+              <div class="section-header-right">
+                <span id="project-count" class="section-header-count">0</span>
+                <span class="section-header-sep"></span>
+                <button id="add-project-btn" class="add-project-btn" title="New Project">+</button>
+              </div>
+            </div>
+            <div id="dashboard-projects"></div>
+          </div>
+          <!-- Right: Recent sessions -->
+          <div class="dashboard-col col-recent">
+            <span class="dashboard-section-label">Recent</span>
+            <div id="dashboard-recent"></div>
+          </div>
+        </div>
       </div>
-      <div class="search-bar">
-        <svg class="search-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+
+      <!-- Unified floating pill: search + compose -->
+      <div class="bottom-bar" id="bottom-bar">
+        <svg class="bottom-bar-search-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
           <circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.5"/>
           <line x1="11" y1="11" x2="14" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
         </svg>
-        <input type="text" id="home-search" placeholder="Search" autocomplete="off">
-      </div>
-      <div id="session-list"></div>
-    </div>
-
-    <!-- SPLIT VIEW: Sidebar + Conversation (hidden by default) -->
-    <div id="split-view" class="hidden">
-      <div id="sidebar">
-        <button id="back-btn" class="glass-pill" title="Back">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-            <path d="M8 1L3 6l5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <input type="text" id="home-search" placeholder="Search sessions..." autocomplete="off" />
+        <button id="compose-fab" class="compose-btn-inner" title="New Session (⌘N)" aria-label="New Session">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 20h9"/>
+            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
           </svg>
         </button>
-        <div class="search-bar">
-          <svg class="search-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.5"/>
-            <line x1="11" y1="11" x2="14" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-          <input type="text" id="sidebar-search" placeholder="Search" autocomplete="off">
-        </div>
-        <div id="sidebar-list"></div>
       </div>
-      <div id="conversation-area">
-        <div id="panels-container"></div>
+
+      <!-- Hidden — kept for JS event binding -->
+      <button id="new-session-btn" class="icon-btn compose-btn" aria-hidden="true" tabindex="-1" style="display:none"></button>
+
+      <!-- Hidden legacy elements kept for JS compatibility -->
+      <div id="session-list" style="display:none"></div>
+      <div class="session-row new-session-active" id="new-session-row" style="display:none">
+        <div class="session-row-unread hidden-dot">
+          <span class="session-row-unread-dot"></span>
+        </div>
+        <div class="session-avatar" style="background: #8E8E93">
+          <span class="avatar-initial">+</span>
+        </div>
+        <div class="session-row-body">
+          <div class="session-row-top">
+            <span class="session-row-name">New Session</span>
+          </div>
+        </div>
       </div>
     </div>
 
-    <!-- NEW SESSION MODAL -->
-    <div id="new-session-modal" class="modal-overlay hidden">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2>New Session</h2>
-          <button class="modal-close" id="modal-close-btn">&times;</button>
+    <!-- SPLIT VIEW: Session header + Sidebar column + Terminal column -->
+    <div id="split-view" class="hidden">
+      <div class="session-inner">
+        <div class="session-header">
+          <button id="back-btn" title="Back to home">&#8249;</button>
+          <span class="session-title" id="session-title">Sessions</span>
         </div>
-        <form id="new-session-form">
-          <div class="form-group">
-            <label for="session-name">Name</label>
-            <input type="text" id="session-name" placeholder="e.g. fix auth bug" autocomplete="off">
+        <div class="session-columns">
+          <div id="sidebar">
+            <div id="sidebar-list"></div>
+            <div class="search-bar">
+              <svg class="search-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.5"/>
+                <line x1="11" y1="11" x2="14" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              <input type="text" id="sidebar-search" placeholder="Search" autocomplete="off">
+            </div>
           </div>
-          <div class="form-group">
-            <label for="session-group">Group / Project</label>
-            <select id="session-group">
-              <option value="">None</option>
-            </select>
+          <div id="conversation-area">
+            <div id="new-session-config" class="hidden">
+              <div class="config-bar">
+                <label>Name:</label>
+                <input type="text" id="config-name" placeholder="e.g. fix auth bug" autocomplete="off">
+                <label>Project:</label>
+                <select id="config-group"><option value="">None</option></select>
+                <label>Dir:</label>
+                <input type="text" id="config-dir" placeholder="~/projects/..." autocomplete="off">
+              </div>
+              <div class="config-message-area">
+                <textarea id="config-message" placeholder="What should Claude work on?" rows="2"></textarea>
+                <button id="config-start" class="start-btn">Start</button>
+              </div>
+            </div>
+            <div id="panels-container"></div>
           </div>
-          <div class="form-group">
-            <label for="session-dir">Working Directory</label>
-            <input type="text" id="session-dir" placeholder="~/projects/my-app" autocomplete="off">
-          </div>
-          <div class="form-group message-group">
-            <textarea id="session-message" placeholder="What should Claude work on?" rows="3"></textarea>
-          </div>
-          <button type="submit" class="submit-btn">Start Session</button>
-        </form>
+        </div>
       </div>
+    </div>
+
+    <!-- Context menu for sessions -->
+    <div id="context-menu" class="context-menu hidden">
+      <button class="context-menu-item" data-action="rename">Rename</button>
+      <button class="context-menu-item" data-action="pin">Pin</button>
+      <button class="context-menu-item" data-action="assign-project">Move to Project</button>
+      <hr class="context-menu-divider">
+      <button class="context-menu-item" data-action="archive">Archive</button>
+    </div>
+
+    <!-- Project picker submenu -->
+    <div id="project-picker" class="context-menu hidden">
+      <!-- Populated dynamically -->
+    </div>
+
+    <!-- Context menu for projects -->
+    <div id="project-context-menu" class="context-menu hidden">
+      <button class="context-menu-item" data-action="rename-project">Rename</button>
+      <hr class="context-menu-divider">
+      <button class="context-menu-item danger" data-action="delete-project">Delete</button>
     </div>
 
   </div>
@@ -115,3 +166,8 @@
   <script src="app.js"></script>
 </body>
 </html>
+
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>
