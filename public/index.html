@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>aiMessage</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-webgl@0.18.0/lib/addon-webgl.js"></script>
+</head>
+<body>
+  <div id="app">
+
+    <!-- HOME VIEW: Full-width session list (default) -->
+    <div id="home-view">
+      <div class="home-header">
+        <h1>Messages</h1>
+        <button id="new-session-btn" class="icon-btn" title="New Session">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M3 4.5C3 3.67 3.67 3 4.5 3h11c.83 0 1.5.67 1.5 1.5v8c0 .83-.67 1.5-1.5 1.5H7l-3.3 2.47A.5.5 0 013 16.2V4.5z" stroke="currentColor" stroke-width="1.5" fill="none"/>
+            <line x1="10" y1="6.5" x2="10" y2="11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="7.5" y1="9" x2="12.5" y2="9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+      <div class="search-bar">
+        <svg class="search-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.5"/>
+          <line x1="11" y1="11" x2="14" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        <input type="text" id="home-search" placeholder="Search" autocomplete="off">
+      </div>
+      <div id="session-list"></div>
+    </div>
+
+    <!-- SPLIT VIEW: Sidebar + Conversation (hidden by default) -->
+    <div id="split-view" class="hidden">
+      <div id="sidebar">
+        <button id="back-btn" class="glass-pill" title="Back">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M8 1L3 6l5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <div class="search-bar">
+          <svg class="search-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.5"/>
+            <line x1="11" y1="11" x2="14" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <input type="text" id="sidebar-search" placeholder="Search" autocomplete="off">
+        </div>
+        <div id="sidebar-list"></div>
+      </div>
+      <div id="conversation-area">
+        <div id="panels-container"></div>
+      </div>
+    </div>
+
+    <!-- NEW SESSION MODAL -->
+    <div id="new-session-modal" class="modal-overlay hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>New Session</h2>
+          <button class="modal-close" id="modal-close-btn">&times;</button>
+        </div>
+        <form id="new-session-form">
+          <div class="form-group">
+            <label for="session-name">Name</label>
+            <input type="text" id="session-name" placeholder="e.g. fix auth bug" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label for="session-group">Group / Project</label>
+            <select id="session-group">
+              <option value="">None</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="session-dir">Working Directory</label>
+            <input type="text" id="session-dir" placeholder="~/projects/my-app" autocomplete="off">
+          </div>
+          <div class="form-group message-group">
+            <textarea id="session-message" placeholder="What should Claude work on?" rows="3"></textarea>
+          </div>
+          <button type="submit" class="submit-btn">Start Session</button>
+        </form>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Panel template (used by JS) -->
+  <template id="panel-template">
+    <div class="panel" data-session-id="">
+      <div class="panel-header">
+        <div class="panel-header-left">
+          <span class="status-dot"></span>
+          <span class="panel-name"></span>
+          <span class="panel-group-label"></span>
+        </div>
+        <div class="panel-header-right">
+          <span class="panel-dir"></span>
+          <button class="panel-close-btn" title="Close panel">&times;</button>
+        </div>
+      </div>
+      <div class="terminal-container"></div>
+    </div>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
