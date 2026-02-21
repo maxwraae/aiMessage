@@ -411,7 +411,7 @@ function renderRecent() {
 }
 
 // --- Open project view: switch to split view filtered to a project group ---
-function openProjectView(group, sessions) {
+function openProjectView(group, sessions, skipPush) {
   // Set group filter so sidebar shows only this project
   state.activeGroup = group;
 
@@ -432,12 +432,14 @@ function openProjectView(group, sessions) {
     dom.homeView.classList.add('hidden');
     dom.splitView.classList.remove('hidden');
     renderSidebar();
+    if (!skipPush) pushRoute(`/project/${encodeURIComponent(group)}`);
     dom.panelsContainer.innerHTML = '';
     startNewSession();
     return;
   }
 
-  openConversation(firstSession.id);
+  if (!skipPush) pushRoute(`/project/${encodeURIComponent(group)}`);
+  openConversation(firstSession.id, true);
 }
 
 // --- Rendering: Sidebar ---
@@ -724,8 +726,47 @@ function renderPanel(sessionId) {
   return panel;
 }
 
+// --- Routing ---
+function pushRoute(path) {
+  if (window.location.pathname !== path) {
+    history.pushState(null, '', path);
+  }
+}
+
+function handleRoute(pathname) {
+  pathname = pathname || '/';
+
+  const sessionMatch = pathname.match(/^\/session\/([^/]+)/);
+  if (sessionMatch) {
+    const id = sessionMatch[1];
+    if (state.sessions.length === 0) {
+      fetchAndUpdateSessions().then(() => openConversation(id, true));
+    } else {
+      openConversation(id, true);
+    }
+    return;
+  }
+
+  const projectMatch = pathname.match(/^\/project\/([^/]+)/);
+  if (projectMatch) {
+    const name = decodeURIComponent(projectMatch[1]);
+    if (state.sessions.length === 0) {
+      fetchAndUpdateSessions().then(() => {
+        const sessions = state.sessions.filter(s => s.group === name);
+        openProjectView(name, sessions, true);
+      });
+    } else {
+      const sessions = state.sessions.filter(s => s.group === name);
+      openProjectView(name, sessions, true);
+    }
+    return;
+  }
+
+  showHome(true);
+}
+
 // --- View Management ---
-function showHome() {
+function showHome(skipPush) {
   // Destroy all terminal panels
   for (const sessionId of [...panelState.keys()]) {
     destroyPanel(sessionId);
@@ -739,9 +780,11 @@ function showHome() {
   dom.homeView.classList.remove('hidden');
   dom.splitView.classList.add('hidden');
   renderHome();
+
+  if (!skipPush) pushRoute('/');
 }
 
-function openConversation(sessionId) {
+function openConversation(sessionId, skipPush) {
   const session = state.sessions.find(s => s.id === sessionId);
   if (!session) return;
 
@@ -772,6 +815,8 @@ function openConversation(sessionId) {
 
   renderSidebar();
   renderPanels();
+
+  if (!skipPush) pushRoute(`/session/${sessionId}`);
 }
 
 function addPanel(sessionId) {
@@ -1639,6 +1684,20 @@ function init() {
   dom.sidebarHeaderTitle = $('#sidebar-header-title');
 
   initEventListeners();
+
+  // Handle browser back/forward
+  window.addEventListener('popstate', () => {
+    handleRoute(window.location.pathname);
+  });
+
+  // Initial fetch, then route based on URL
+  fetchAndUpdateSessions().then(() => {
+    const path = window.location.pathname;
+    if (path && path !== '/') {
+      handleRoute(path);
+    }
+  });
+
   startPolling();
 }
 
