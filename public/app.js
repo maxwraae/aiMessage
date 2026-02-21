@@ -1519,7 +1519,13 @@ function startInlineRename(sessionId) {
 // --- Event Listeners ---
 function initEventListeners() {
   // Back button
-  dom.backBtn.addEventListener('click', showHome);
+  dom.backBtn.addEventListener('click', () => {
+    if (window.history.length > 1) {
+      history.back();
+    } else {
+      showHome();
+    }
+  });
 
   // New session — both the hidden toolbar button and the floating FAB
   dom.newSessionBtn.addEventListener('click', startNewSession);
@@ -1661,7 +1667,11 @@ function initEventListeners() {
       if (config && !config.classList.contains('hidden')) {
         cancelNewSession();
       } else if (state.activeView === 'conversation') {
-        showHome();
+        if (window.history.length > 1) {
+          history.back();
+        } else {
+          showHome();
+        }
       }
       return;
     }
