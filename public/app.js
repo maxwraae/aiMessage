@@ -16,6 +16,10 @@ const state = {
 // Per-panel terminal state: sessionId -> { terminal, ws, fitAddon, resizeObserver, reconnectTimer, reconnectDelay }
 const panelState = new Map();
 
+// Polling interval for session list refresh
+let pollInterval = null;
+const POLL_INTERVAL_MS = 5000;
+
 // --- DOM References ---
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
@@ -36,6 +40,32 @@ const dom = {
   newSessionForm: $('#new-session-form'),
   panelTemplate: $('#panel-template'),
 };
+
+// --- API ---
+async function apiGetSessions() {
+  const res = await fetch('/sessions');
+  if (!res.ok) throw new Error(`GET /sessions failed: ${res.status}`);
+  return res.json();
+}
+
+async function apiCreateSession(name, group, workingDir) {
+  const res = await fetch('/sessions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, group: group || undefined, workingDir: workingDir || undefined }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `POST /sessions failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+async function apiDeleteSession(sessionId) {
+  const res = await fetch(`/sessions/${sessionId}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`DELETE /sessions/${sessionId} failed: ${res.status}`);
+  return res.json();
+}
 
 // --- Utility ---
 function timeAgo(date) {
@@ -190,15 +220,16 @@ function createTerminal(sessionId, containerEl) {
   terminal.loadAddon(fitAddon);
   terminal.loadAddon(new WebLinksAddon.WebLinksAddon());
 
-  // Try WebGL renderer for performance, fall back gracefully
+  // Mount terminal to DOM first
+  terminal.open(containerEl);
+
+  // Try WebGL renderer for performance AFTER open(), fall back gracefully
   try {
     terminal.loadAddon(new WebglAddon.WebglAddon());
   } catch (e) {
     console.warn('WebGL addon failed to load, using canvas renderer:', e);
   }
 
-  // Mount terminal
-  terminal.open(containerEl);
   fitAddon.fit();
 
   // Connect WebSocket
@@ -206,7 +237,12 @@ function createTerminal(sessionId, containerEl) {
 
   // ResizeObserver for auto-fitting
   const resizeObserver = new ResizeObserver(() => {
-    fitAddon.fit();
+    try {
+      fitAddon.fit();
+    } catch (e) {
+      // fitAddon can throw if terminal is disposed
+      return;
+    }
     const ps = panelState.get(sessionId);
     if (ps && ps.ws && ps.ws.readyState === WebSocket.OPEN) {
       ps.ws.send(JSON.stringify({ type: 'resize', cols: terminal.cols, rows: terminal.rows }));
@@ -231,6 +267,9 @@ function connectWebSocket(sessionId, terminal) {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const ws = new WebSocket(`${protocol}//${location.host}/sessions/${sessionId}/stream`);
 
+  // Receive binary data as ArrayBuffer so xterm.js can handle it properly
+  ws.binaryType = 'arraybuffer';
+
   ws.onopen = () => {
     // Remove disconnected overlay if present
     const panel = document.querySelector(`.panel[data-session-id="${sessionId}"]`);
@@ -247,9 +286,13 @@ function connectWebSocket(sessionId, terminal) {
     }
   };
 
-  // Server sends raw terminal data
+  // Server sends raw terminal data as binary
   ws.onmessage = (event) => {
-    terminal.write(event.data);
+    if (event.data instanceof ArrayBuffer) {
+      terminal.write(new Uint8Array(event.data));
+    } else {
+      terminal.write(event.data);
+    }
 
     // Update session's last activity for sidebar sorting
     const session = state.sessions.find(s => s.id === sessionId);
@@ -525,8 +568,6 @@ function renderPanels() {
         }
       } else if (panelState.has(sessionId)) {
         // Terminal already exists — re-mount it
-        const ps = panelState.get(sessionId);
-        // Terminal was disposed when DOM was cleared; recreate
         destroyPanel(sessionId);
         const terminal = createTerminal(sessionId, containerEl);
         if (state.activeSessionId === sessionId) {
@@ -543,7 +584,21 @@ function refreshActiveView() {
   } else {
     renderSidebar();
     // Don't re-render panels (would destroy terminals)
-    // Just update sidebar
+    // Just update sidebar and panel headers
+    updatePanelHeaders();
+  }
+}
+
+function updatePanelHeaders() {
+  for (const sessionId of state.panels) {
+    const session = state.sessions.find(s => s.id === sessionId);
+    if (!session) continue;
+    const panel = document.querySelector(`.panel[data-session-id="${sessionId}"]`);
+    if (!panel) continue;
+    const dot = panel.querySelector('.status-dot');
+    if (dot) dot.className = `status-dot ${session.status}`;
+    const preview = panel.querySelector('.panel-name');
+    if (preview) preview.textContent = session.name;
   }
 }
 
@@ -578,6 +633,37 @@ function handleSearch(query) {
   }
 }
 
+// --- Polling: Fetch sessions from server periodically ---
+async function fetchAndUpdateSessions() {
+  try {
+    const serverSessions = await apiGetSessions();
+    // Merge server data with local unread state
+    const unreadMap = new Map();
+    for (const s of state.sessions) {
+      unreadMap.set(s.id, s.unread || false);
+    }
+    state.sessions = serverSessions.map(s => ({
+      ...s,
+      unread: unreadMap.has(s.id) ? unreadMap.get(s.id) : false,
+    }));
+    refreshActiveView();
+  } catch (err) {
+    console.error('Failed to fetch sessions:', err);
+  }
+}
+
+function startPolling() {
+  fetchAndUpdateSessions(); // Initial fetch
+  pollInterval = setInterval(fetchAndUpdateSessions, POLL_INTERVAL_MS);
+}
+
+function stopPolling() {
+  if (pollInterval) {
+    clearInterval(pollInterval);
+    pollInterval = null;
+  }
+}
+
 // --- Event Listeners ---
 function initEventListeners() {
   // Back button
@@ -592,29 +678,44 @@ function initEventListeners() {
     if (e.target === dom.modal) closeModal();
   });
 
-  // New session form submit
-  dom.newSessionForm.addEventListener('submit', (e) => {
+  // New session form submit — calls the server API
+  dom.newSessionForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = $('#session-name').value.trim() || 'Untitled';
     const group = $('#session-group').value || null;
-    const dir = $('#session-dir').value.trim() || '~/';
+    const dir = $('#session-dir').value.trim() || undefined;
     const message = $('#session-message').value.trim();
 
-    const id = 'session-' + Date.now();
-    const session = {
-      id,
-      name,
-      group,
-      status: 'idle',
-      workingDir: dir,
-      unread: false,
-      lastActivity: new Date().toISOString(),
-      preview: message || '',
-    };
-    state.sessions.push(session);
+    const submitBtn = dom.newSessionForm.querySelector('.submit-btn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Starting...';
 
-    closeModal();
-    openConversation(id);
+    try {
+      const session = await apiCreateSession(name, group, dir);
+      // Add to local state
+      session.unread = false;
+      state.sessions.unshift(session);
+
+      closeModal();
+      openConversation(session.id);
+
+      // If there's an initial message, send it to the terminal after a brief delay
+      // to allow the pty/tmux to initialize
+      if (message) {
+        setTimeout(() => {
+          const ps = panelState.get(session.id);
+          if (ps && ps.ws && ps.ws.readyState === WebSocket.OPEN) {
+            ps.ws.send(message + '\n');
+          }
+        }, 1500);
+      }
+    } catch (err) {
+      console.error('Failed to create session:', err);
+      alert('Failed to create session: ' + err.message);
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Start Session';
+    }
   });
 
   // Search inputs
@@ -689,13 +790,13 @@ function initEventListeners() {
       return;
     }
 
-    // Cmd+. -> send Ctrl+C to active terminal
+    // Cmd+. -> send Ctrl+C to active terminal via WebSocket
     if (meta && e.key === '.') {
       e.preventDefault();
       if (state.activeSessionId) {
         const ps = panelState.get(state.activeSessionId);
-        if (ps && ps.terminal) {
-          ps.terminal.write('\x03');
+        if (ps && ps.ws && ps.ws.readyState === WebSocket.OPEN) {
+          ps.ws.send('\x03');
         }
       }
       return;
@@ -721,29 +822,10 @@ function getSortedSessions() {
   });
 }
 
-// ============================================
-// DEMO DATA (sessions only, no message content)
-// ============================================
-function loadDemoData() {
-  const now = Date.now();
-  const min = 60000;
-  const hour = 3600000;
-
-  state.sessions = [
-    { id: 's1', name: 'fix auth middleware', group: 'atlas', status: 'running', workingDir: '~/projects/atlas/src', unread: true, lastActivity: new Date(now - 2 * min).toISOString(), preview: 'Fixing JWT token refresh validation...' },
-    { id: 's2', name: 'add user settings page', group: 'atlas', status: 'done', workingDir: '~/projects/atlas/frontend', unread: false, lastActivity: new Date(now - 1.5 * hour).toISOString(), preview: 'Settings page complete with all 4 sections' },
-    { id: 's3', name: 'migrate database schema', group: 'atlas', status: 'idle', workingDir: '~/projects/atlas/db', unread: false, lastActivity: new Date(now - 4.5 * hour).toISOString(), preview: 'Migration drafted, ready to run Monday' },
-    { id: 's4', name: 'refactor payment flow', group: null, status: 'running', workingDir: '~/projects/billing', unread: true, lastActivity: new Date(now - 35 * min).toISOString(), preview: 'Simplifying checkout to 3 steps...' },
-    { id: 's5', name: 'write API docs', group: null, status: 'error', workingDir: '~/projects/docs', unread: false, lastActivity: new Date(now - 5.5 * hour).toISOString(), preview: 'Error: Context window exceeded' },
-    { id: 's6', name: 'setup CI pipeline', group: 'infra', status: 'done', workingDir: '~/projects/infra', unread: false, lastActivity: new Date(now - 6.5 * hour).toISOString(), preview: 'CI/CD workflows created for monorepo' },
-  ];
-}
-
 // --- Init ---
 function init() {
-  loadDemoData();
-  renderHome();
   initEventListeners();
+  startPolling();
 }
 
 document.addEventListener('DOMContentLoaded', init);
